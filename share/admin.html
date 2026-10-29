@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manage users · Call Connect Dashboard</title>
+<style>
+:root { color-scheme: light dark; --fg:#1f2430; --muted:#6b7280; --bg:#f6f7fb; --panel:#fff; --line:#dde1ea; --accent:#2f5bd3; --bad:#d64545; --ok:#2e8b57; }
+@media (prefers-color-scheme: dark) { :root { --fg:#e8eaf0; --muted:#a0a7b5; --bg:#14161c; --panel:#1c1f27; --line:#2e323d; --accent:#7a9cff; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 "Inter","Segoe UI",system-ui,sans-serif; padding:24px 16px; }
+main { max-width:860px; margin:0 auto; }
+header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+h1 { font-size:1.5rem; margin:0; }
+h2 { font-size:1.05rem; margin:0 0 12px; }
+a, .link { color:var(--accent); }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:20px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; align-items:end; }
+label { display:block; font-size:.8rem; color:var(--muted); margin-bottom:4px; }
+input, select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; font:inherit; }
+button { padding:8px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+button.ghost { background:none; color:var(--accent); padding:4px 6px; font-weight:500; }
+button.danger { color:var(--bad); }
+.msg { min-height:1.3em; font-size:.85rem; margin:10px 0 0; }
+.msg.bad { color:var(--bad); } .msg.good { color:var(--ok); }
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:.9rem; }
+th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+th { color:var(--muted); font-weight:500; font-size:.8rem; }
+.role { font-size:.75rem; padding:2px 8px; border-radius:99px; border:1px solid var(--line); }
+form.inline { display:inline; margin:0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Manage users</h1>
+    <div><a href="/">← Back to dashboard</a> · <form class="inline" method="post" action="/api/logout"><button class="ghost link">Log out</button></form></div>
+  </header>
+
+  <section class="panel">
+    <h2>Add a user</h2>
+    <form id="add" class="grid">
+      <div><label for="name">Name</label><input id="name" name="name" required></div>
+      <div><label for="email">Email</label><input id="email" name="email" type="email" required></div>
+      <div><label for="password">Password (8+ characters)</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+      <div><label for="role">Role</label><select id="role" name="role"><option value="user">User</option><option value="admin">Admin</option></select></div>
+      <div><button>Add user</button></div>
+    </form>
+    <p class="msg" id="addMsg" role="status"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Users</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="msg" id="listMsg" role="status"></p>
+  </section>
+</main>
+<script>
+const rows = document.getElementById('rows'), addMsg = document.getElementById('addMsg'), listMsg = document.getElementById('listMsg');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+const say = (el, text, ok) => { el.textContent = text; el.className = 'msg ' + (ok ? 'good' : 'bad'); };
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json' } });
+  if (r.status === 401) { location.href = '/login'; throw new Error('Not signed in'); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+
+async function load() {
+  const { users, me } = await api('/api/users');
+  rows.innerHTML = users.map(u => `<tr>
+    <td>${esc(u.name)}</td><td>${esc(u.email)}</td><td><span class="role">${esc(u.role)}</span></td>
+    <td>${esc(u.created_at.slice(0, 10))}</td>
+    <td><button class="ghost" data-reset="${u.id}" data-name="${esc(u.name)}">Reset password</button>
+        ${u.id === me ? '' : `<button class="ghost danger" data-del="${u.id}" data-name="${esc(u.name)}">Remove</button>`}</td>
+  </tr>`).join('');
+}
+
+document.getElementById('add').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await api('/api/users', { method: 'POST', body: JSON.stringify({ name: f.name.value, email: f.email.value, password: f.password.value, role: f.role.value }) });
+    say(addMsg, `Added ${f.name.value}.`, true); f.reset(); load();
+  } catch (err) { say(addMsg, err.message, false); }
+});
+
+rows.addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  try {
+    if (b.dataset.del && confirm(`Remove ${b.dataset.name}? They will be signed out immediately.`)) {
+      await api('/api/users/' + b.dataset.del, { method: 'DELETE' }); say(listMsg, `Removed ${b.dataset.name}.`, true); load();
+    } else if (b.dataset.reset) {
+      const pw = prompt(`New password for ${b.dataset.name} (8+ characters):`);
+      if (!pw) return;
+      await api('/api/users/' + b.dataset.reset, { method: 'PATCH', body: JSON.stringify({ password: pw }) });
+      say(listMsg, `Password reset for ${b.dataset.name}.`, true);
+    }
+  } catch (err) { say(listMsg, err.message, false); }
+});
+
+load().catch(err => { rows.innerHTML = ''; say(listMsg, err.message, false); });
+</script>
+</body>
+</html>
