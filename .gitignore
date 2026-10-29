@@ -1,0 +1,4 @@
+# Lead/client data — keep out of the repo
+calls_data.csv
+*.xlsx
+Lead_First_Call_Dashboard.html
